@@ -1,4 +1,7 @@
 # Countree
+
+<img src="https://github.com/user-attachments/assets/2f862508-dd50-4342-ab0f-2db6beac77ce" height="100"/>
+
 taxid의 출현 빈도에 따라 tree를 가시적으로 보여줌. html로 하면 특정 노드의 정보를 저장할 수도 있음. 대박이지
 
 # 어케 씀
