@@ -2,7 +2,7 @@
 taxid의 출현 빈도에 따라 tree를 가시적으로 보여줌. html로 하면 특정 노드의 정보를 저장할 수도 있음. 대박이지
 
 # 어케 씀
-1. 다운로드 받아서 실행하셈
+1. ```countree.py``` 다운로드 받아서 실행하셈
 
 # 입력 parameter 뭐임
 - 1, 2번째 parameter로는 각각 input 파일과 output 파일을 기입하면 됨. input은 1번째 field에 taxid, 2번째 field에 count 또는 ratio 정보를 지닌 tsv 파일임. output은 png, svg, pdf, html을 확장자로 지님
