@@ -130,30 +130,22 @@ def process_taxdump(taxdump_path):
 
 def read_data(filename, info_type):
     data = {}
-    total_count = 0
     with open(filename, 'r') as f:
         for line in f:
             parts = line.strip().split('\t')
-            if len(parts) >= 2:
+            if len(parts) >= 3:
                 try:
                     taxid = int(parts[0])
-                    value = float(parts[1])
-                    data[taxid] = value
+                    count = float(parts[1])
+                    whole_count = float(parts[2])
                     if info_type == 'count':
-                        total_count += value
+                        value = count
+                        data[taxid] = {'value': value, 'count': count}
+                    else:  # ratio
+                        value = count / whole_count if whole_count != 0 else 0
+                        data[taxid] = {'value': value, 'count': count, 'whole_count': whole_count}
                 except ValueError:
                     print(f"Warning: Skipping invalid line: {line.strip()}")
-    
-    if info_type == 'count':
-        # Calculate ratio for each taxid
-        for taxid in data:
-            ratio = data[taxid] / total_count
-            data[taxid] = {'count': data[taxid], 'ratio': ratio}
-    else:
-        # For 'ratio' info_type, set count same as value and ratio as value
-        for taxid in data:
-            data[taxid] = {'count': data[taxid], 'ratio': data[taxid]}
-    
     return data
 
 def get_threshold_indices(data_values):
@@ -168,6 +160,39 @@ def get_threshold_indices(data_values):
         if len(thresholds) == 7:
             break
     return thresholds
+
+def accumulate_values(node, info_type):
+    if not node.children:
+        if info_type == 'count':
+            return node.count, node.value
+        else:
+            return node.count, node.whole_count, node.value
+
+    total_count = node.count
+    total_value = node.value
+    if info_type == 'ratio':
+        total_whole_count = node.whole_count
+
+    for child in node.children:
+        if info_type == 'count':
+            child_count, child_value = accumulate_values(child, info_type)
+            total_count += child_count
+            total_value += child_value
+        else:
+            child_count, child_whole_count, child_value = accumulate_values(child, info_type)
+            total_count += child_count
+            total_whole_count += child_whole_count
+
+    if info_type == 'ratio':
+        total_value = total_count / total_whole_count if total_whole_count != 0 else 0
+
+    node.add_feature("cumulative_count", total_count)
+    node.add_feature("cumulative_value", total_value)
+    if info_type == 'ratio':
+        node.add_feature("cumulative_whole_count", total_whole_count)
+        return total_count, total_whole_count, total_value
+    else:
+        return total_count, total_value
 
 def create_tree(data, ncbi, layout, info_type):
     valid_taxids = [taxid for taxid in data.keys() if ncbi.get_taxid_translator([taxid])]
@@ -185,12 +210,12 @@ def create_tree(data, ncbi, layout, info_type):
     ts.show_branch_support = False
 
     max_count = max(d['count'] for d in data.values())
-    threshold_indices = get_threshold_indices([d['ratio'] for d in data.values()])
+    threshold_indices = get_threshold_indices([d['value'] for d in data.values()])
 
     for node in tree.traverse():
         process_node(node, data, ncbi, max_count, threshold_indices, info_type)
 
-    accumulate_counts(tree)
+    accumulate_values(tree, info_type)
 
     return tree, ts
 
@@ -205,22 +230,24 @@ def process_node(node, data, ncbi, max_count, threshold_indices, info_type):
             print(f"Warning: Invalid taxid '{node.name}'. Setting to 0.")
             taxid = 0
     
-    node_data = data.get(taxid, {'count': 0, 'ratio': 0})
+    node_data = data.get(taxid, {'count': 0, 'value': 0})
+    if info_type == 'ratio':
+        node_data.setdefault('whole_count', 0)
+    
     count = node_data['count']
-    ratio = node_data['ratio']
+    value = node_data['value']
     
     nstyle = NodeStyle()
     nstyle["size"] = 0
     
-    # Determine the index for styling based on ratio
-    style_index = next((i for i, threshold in enumerate(threshold_indices) if ratio >= threshold), len(threshold_indices))
+    style_index = next((i for i, threshold in enumerate(threshold_indices) if value >= threshold), len(threshold_indices))
     
-    width = int((style_index + 1) * 2)  # Increase width based on index
+    width = int((style_index + 1) * 2)
     nstyle["hz_line_width"] = max(1, width)
     nstyle["vt_line_width"] = max(1, width)
     
     sci_name = ncbi.get_taxid_translator([taxid]).get(taxid, "Unknown")
-    node.name = f"{sci_name} (ID: {taxid}, Count: {count:.2f}, Ratio: {ratio:.4f})"
+    node.name = f"{sci_name} (ID: {taxid}, Count: {count:.2f}, Value: {value:.4f})"
     node.set_style(nstyle)
 
     face = CircleFace(radius=max(1, width), color="skyblue", style="sphere")
@@ -232,29 +259,11 @@ def process_node(node, data, ncbi, max_count, threshold_indices, info_type):
         node.add_face(info_face, column=0, position="branch-top")
 
     node.add_feature("count", count)
-    node.add_feature("ratio", ratio)
+    node.add_feature("value", value)
+    if info_type == 'ratio':
+        node.add_feature("whole_count", node_data['whole_count'])
 
-def accumulate_counts(node):
-    if not hasattr(node, 'count'):
-        node.add_feature('count', 0)
-    if not hasattr(node, 'ratio'):
-        node.add_feature('ratio', 0)
-
-    if not node.children:
-        return node.count, node.ratio
-    
-    total_count = node.count
-    total_ratio = node.ratio
-    for child in node.children:
-        child_count, child_ratio = accumulate_counts(child)
-        total_count += child_count
-        total_ratio += child_ratio
-    
-    node.add_feature("cumulative_count", total_count)
-    node.add_feature("cumulative_ratio", total_ratio)
-    return total_count, total_ratio
-
-def create_html_output(tree, output_file, layout):
+def create_html_output(tree, output_file, layout, info_type, font, level):
     try:
         print("Starting HTML output creation...")
         tree_data = tree_to_dict(tree)
@@ -353,6 +362,21 @@ def create_html_output(tree, output_file, layout):
                     user-select: text;
                     display: none;
                 }}
+                #legend-container {{
+                    position: fixed;
+                    top: 20px;
+                    right: 280px;
+                    width: 200px;
+                    font-size: 12px;
+                    background-color: rgba(255, 255, 255, 0.8);
+                    padding: 10px;
+                    border-radius: 5px;
+                    box-shadow: 0 0 10px rgba(0,0,0,0.1);
+                }}
+                #legend-svg {{
+                    width: 100%;
+                    height: 40px;
+                }}
             </style>
         </head>
         <body>
@@ -368,11 +392,15 @@ def create_html_output(tree, output_file, layout):
                 <button onclick="storeTheData()">Store The Data</button>
                 <button onclick="loadTSVFile()">Load TSV File</button>
             </div>
+            <div id="legend-container"></div>
             <div id="custom-alert"></div>
             <div id="stored-data-display"></div>
             <script>
             const treeData = {json.dumps(tree_data)};
             const layout = "{layout}";
+            const info_type = "{info_type}";
+            const font = "{font}";
+            const level = "{level}";
 
             const width = window.innerWidth;
             const height = window.innerHeight;
@@ -392,8 +420,8 @@ def create_html_output(tree, output_file, layout):
             }}
 
             const svg = d3.select("#tree-container").append("svg")
-                .attr("width", width)
-                .attr("height", height)
+                .attr("width", "100%")
+                .attr("height", "100%")
                 .attr("viewBox", layout === "circular" ? [-width / 2, -height / 2, width, height] : [0, 0, width, height])
                 .style("font", "10px sans-serif")
                 .style("user-select", "none");
@@ -403,28 +431,83 @@ def create_html_output(tree, output_file, layout):
             if (layout === "linear") {{
                 g.attr("transform", `translate(${{margin.left}},${{margin.top}})`);
             }}
-            
-            const colorScale = cumulative_ratio => {{
-                if (cumulative_ratio >= 0.5) return "#FF0000";  // Red
-                if (cumulative_ratio >= 0.25) return "#FF7F00";   // Orange
-                if (cumulative_ratio >= 0.125) return "#FFFF00";   // Yellow
-                if (cumulative_ratio >= 0.0625) return "#00FF00";   // Green
-                if (cumulative_ratio >= 0.03125) return "#0000FF";    // Blue
-                if (cumulative_ratio >= 0.015625) return "#4B0082";    // Indigo
-                return "#8F00FF";                     // Violet
-            }};
 
-            const fontSize = 30;
+            // const colorScale = cumulative_value => {{
+            //     if (cumulative_value >= 0.5) return "#FF0000";  // Red
+            //     if (cumulative_value >= 0.25) return "#FF7F00";   // Orange
+            //     if (cumulative_value >= 0.125) return "#FFFF00";   // Yellow
+            //     if (cumulative_value >= 0.0625) return "#00FF00";   // Green
+            //     if (cumulative_value >= 0.03125) return "#0000FF";    // Blue
+            //     if (cumulative_value >= 0.015625) return "#4B0082";    // Indigo
+            //     return "#8F00FF";                     // Violet
+            // }};
+
+            // const fontSize = 30;
             
-            const fontSizeScale = cumulative_ratio => {{
-                if (cumulative_ratio >= 0.5) return fontSize;
-                if (cumulative_ratio >= 0.25) return fontSize * 0.9;
-                if (cumulative_ratio >= 0.125) return fontSize * 0.8;
-                if (cumulative_ratio >= 0.0625) return fontSize * 0.7;
-                if (cumulative_ratio >= 0.03125) return fontSize * 0.6;
-                if (cumulative_ratio >= 0.015625) return fontSize * 0.5;
-                return fontSize * 0.4;
-            }};
+            // const fontSizeScale = cumulative_value => {{
+            //     if (cumulative_value >= 0.5) return fontSize;
+            //     if (cumulative_value >= 0.25) return fontSize * 0.9;
+            //     if (cumulative_value >= 0.125) return fontSize * 0.8;
+            //     if (cumulative_value >= 0.0625) return fontSize * 0.7;
+            //     if (cumulative_value >= 0.03125) return fontSize * 0.6;
+            //     if (cumulative_value >= 0.015625) return fontSize * 0.5;
+            //     return fontSize * 0.4;
+            // }};
+
+            const cumulative_values = root.descendants().map(d => d.data.cumulative_value);
+            const minValue = d3.min(cumulative_values);
+            const maxValue = d3.max(cumulative_values);
+
+            let colorScale, fontSizeScale;
+
+            if (level === "continuous") {{
+                if (font === "absolutely") {{
+                    colorScale = d3.scaleSequential(d3.interpolateRainbow)
+                        .domain([1, 0]);
+
+                    fontSizeScale = d3.scaleLog()
+                        .domain([0.00001, 1])
+                        .range([5, 20])
+                        .clamp(true);
+                }} else {{ // relatively
+                    colorScale = d3.scaleSequential(d3.interpolateRainbow)
+                        .domain([maxValue, minValue]);
+
+                    fontSizeScale = d3.scaleLog()
+                        .domain([Math.max(0.00001, minValue), maxValue])
+                        .range([5, 20])
+                        .clamp(true);
+                }}
+            }} else {{ // discontinuous
+                const colors = ["#FF0000", "#FFA500", "#FFFF00", "#00FF00", "#0000FF", "#800080", "#000000"];
+                if (font === "absolutely") {{
+                    colorScale = d3.scaleThreshold()
+                        .domain([0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1])
+                        .range(["#8F00FF", "#4B0082", "#0000FF", "#00FF00", "#FFFF00", "#FF7F00", "#FF0000"]);
+
+                    fontSizeScale = d3.scaleThreshold()
+                        .domain([0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1])
+                        .range([5, 7, 9, 11, 13, 15, 17, 20]);
+                }} else {{ // relatively
+                    const step = (maxValue - minValue) / 7;
+                    colorScale = d3.scaleThreshold()
+                        .domain([minValue + step, minValue + 2*step, minValue + 3*step, minValue + 4*step, minValue + 5*step, minValue + 6*step])
+                        .range(["#8F00FF", "#4B0082", "#0000FF", "#00FF00", "#FFFF00", "#FF7F00", "#FF0000"]);
+
+                    fontSizeScale = d3.scaleLinear()
+                        .domain([minValue, maxValue])
+                        .range([5, 20])
+                        .clamp(true);
+                }}
+            }}
+
+            function getColor(cumulative_value) {{
+                return colorScale(cumulative_value);
+            }}
+
+            function getFontSize(cumulative_value) {{
+                return fontSizeScale(Math.max(0.00001, cumulative_value));
+            }}
 
             const link = g.append("g")
                 .attr("fill", "none")
@@ -461,9 +544,9 @@ def create_html_output(tree, output_file, layout):
                     ? (d.x < Math.PI === !d.children ? "start" : "end")
                     : (d.children ? "end" : "start"))
                 .attr("transform", d => layout === "circular" && d.x >= Math.PI ? "rotate(180)" : null)
-                .text(d => d.data.rank)
-                .attr("fill", d => colorScale(d.data.cumulative_ratio))
-                .style("font-size", d => `${{fontSizeScale(d.data.cumulative_ratio)}}px`)
+                .text(d => info_type === 'count' ? d.data.rank : d.data.sci_name)
+                .attr("fill", d => getColor(d.data.cumulative_value))
+                .style("font-size", d => `${{getFontSize(d.data.cumulative_value)}}px`)
                 .clone(true).lower()
                 .attr("stroke", "white");
 
@@ -472,19 +555,17 @@ def create_html_output(tree, output_file, layout):
 
             let activeNode = null;
             let hideTimer = null;
-            let isHiding = false;
+            let isMouseOverNode = false;
+            let isMouseOverTooltipOrMenu = false;
 
             function showTooltipAndMenu(event, d) {{
-                if (isHiding) {{
-                    return;
-                }}
-
                 if (activeNode !== d) {{
                     clearTimeout(hideTimer);
                     hideTooltipAndMenu(() => {{
                         displayNodeInfo(event, d);
                     }});
                 }}
+                isMouseOverNode = true;
             }}
 
             function displayNodeInfo(event, d) {{
@@ -500,9 +581,10 @@ def create_html_output(tree, output_file, layout):
                             Rank: ${{d.data.rank}}<br/>
                             Taxid: ${{d.data.name.split('(ID:')[1].split(',')[0].trim()}}<br/>
                             Count: ${{d.data.count}}<br/>
-                            Ratio: ${{d.data.ratio.toFixed(4)}}<br/>
+                            Value: ${{d.data.value.toFixed(4)}}<br/>
                             Cumulative Count: ${{d.data.cumulative_count}}<br/>
-                            Cumulative Ratio: ${{d.data.cumulative_ratio.toFixed(4)}}
+                            Cumulative Value: ${{d.data.cumulative_value.toFixed(4)}}
+                            ${{info_type === 'ratio' ? `<br/>Whole Count: ${{d.data.whole_count}}<br/>Cumulative Whole Count: ${{d.data.cumulative_whole_count}}` : ''}}
                            </div>`);
 
                 tooltip.transition().duration(200).style("opacity", 0.9);
@@ -520,40 +602,51 @@ def create_html_output(tree, output_file, layout):
                 d3.select("#remove-button").on("click", () => removeFromTSV(d));
                 
                 activeNode = d;
-                isHiding = false;
             }}
 
             function startHideTimer() {{
-                clearTimeout(hideTimer);
-                hideTimer = setTimeout(() => hideTooltipAndMenu(), 500);
+            isMouseOverNode = false;
+            if (!isMouseOverTooltipOrMenu){{
+                    clearTimeout(hideTimer);
+                    hideTimer = setTimeout(() => hideTooltipAndMenu(), 500);
+                }}
             }}
 
             function hideTooltipAndMenu(callback) {{
-                if (!activeNode) {{
-                    if (callback) callback();
-                    return;
-                }}
-                
-                isHiding = true;
-
+                if (!activeNode || (!isMouseOverNode && !isMouseOverTooltipOrMenu))
                 tooltip.transition().duration(200).style("opacity", 0);
                 contextMenu.transition().duration(200).style("opacity", 0);
                 setTimeout(() => {{
                     contextMenu.style("display", "none");
                     activeNode = null;
-                    isHiding = false;
                     if (callback) callback();
                 }}, 200);
             }}
 
-            node.on("mouseover", showTooltipAndMenu)
+            node.on("mouseover", (event, d) => showTooltipAndMenu(event, d))
                 .on("mouseout", startHideTimer);
 
-            tooltip.on("mouseover", () => clearTimeout(hideTimer))
-                   .on("mouseout", startHideTimer);
+            tooltip.on("mouseover", () => {{
+                clearTimeout(hideTimer)
+                isMouseOverTooltipOrMenu = true;
+            }})
+                .on("mouseout", () => {{
+                    isMouseOverTooltipOrMenu = false;
+                    if (!isMouseOverNode) {{
+                        startHideTimer();
+                    }}
+            }})
 
-            contextMenu.on("mouseover", () => clearTimeout(hideTimer))
-                       .on("mouseout", startHideTimer);
+            contextMenu.on("mouseover", () => {{
+                clearTimeout(hideTimer)
+                isMouseOverTooltipOrMenu = true;
+            }})
+                .on("mouseout", () => {{
+                    isMouseOverTooltipOrMenu = false;
+                    if (!isMouseOverNode) {{
+                        startHideTimer();
+                    }}
+            }})
 
             function showCustomAlert(message, x, y, isWarning = false) {{
                 const alert = document.getElementById('custom-alert');
@@ -579,7 +672,7 @@ def create_html_output(tree, output_file, layout):
                         count: d.data.count,
                         ratio: d.data.ratio,
                         cumulative_count: d.data.cumulative_count,
-                        cumulative_ratio: d.data.cumulative_ratio
+                        cumulative_value: d.data.cumulative_value
                     }});
                     localStorage.setItem('storedData', JSON.stringify(stored));
                     showCustomAlert(`Added sci_name ${{d.data.sci_name}} (Taxid: ${{taxid}})`, event.pageX, event.pageY);
@@ -617,7 +710,7 @@ def create_html_output(tree, output_file, layout):
                 }}
 
                 const tsvContent = stored.map(item => 
-                    `${{item.rank}}\t${{item.sci_name}}\t${{item.taxid}}\t${{item.count}}\t${{item.ratio}}\t${{item.cumulative_count}}\t${{item.cumulative_ratio}}`
+                    `${{item.rank}}\t${{item.sci_name}}\t${{item.taxid}}\t${{item.count}}\t${{item.ratio}}\t${{item.cumulative_count}}\t${{item.cumulative_value}}`
                 ).join('\\n');
 
                 const blob = new Blob([tsvContent], {{ type: 'text/tab-separated-values' }});
@@ -643,7 +736,7 @@ def create_html_output(tree, output_file, layout):
                             const content = e.target.result;
                             const lines = content.split('\\n');
                             const data = lines.map(line => {{
-                                const [rank, sci_name, taxid, count, ratio, cumulative_count, cumulative_ratio] = line.split('\\t');
+                                const [rank, sci_name, taxid, count, ratio, cumulative_count, cumulative_value] = line.split('\\t');
                                 return {{ 
                                     rank, 
                                     sci_name, 
@@ -651,7 +744,7 @@ def create_html_output(tree, output_file, layout):
                                     count: parseFloat(count), 
                                     ratio: parseFloat(ratio),
                                     cumulative_count: parseFloat(cumulative_count),
-                                    cumulative_ratio: parseFloat(cumulative_ratio)
+                                    cumulative_value: parseFloat(cumulative_value)
                                 }};
                             }});
                             localStorage.setItem('storedData', JSON.stringify(data));
@@ -677,7 +770,7 @@ def create_html_output(tree, output_file, layout):
                     hideTooltipAndMenu();
                     
                     node.selectAll("text")
-                        .style("font-size", d => `${{fontSizeScale(d.data.cumulative_ratio) / Math.sqrt(event.transform.k)}}px`);
+                        .style("font-size", d => `${{getFontSize(d.data.cumulative_value) / Math.sqrt(event.transform.k)}}px`);
                 }});
 
             svg.call(zoom);
@@ -712,12 +805,15 @@ def tree_to_dict(node):
         "rank": getattr(node, "rank", ""),
         "sci_name": getattr(node, "sci_name", ""),
         "count": getattr(node, "count", 0),
-        "ratio": getattr(node, "ratio", 0),
+        "value": getattr(node, "value", 0), 
         "cumulative_count": getattr(node, "cumulative_count", getattr(node, "count", 0)),
-        "cumulative_ratio": getattr(node, "cumulative_ratio", getattr(node, "ratio", 0))
+        "cumulative_value": getattr(node, "cumulative_value", getattr(node, "value", 0))
     }
+    if hasattr(node, "whole_count"):
+        node_dict["whole_count"] = node.whole_count
+    if hasattr(node, "cumulative_whole_count"):
+        node_dict["cumulative_whole_count"] = node.cumulative_whole_count
     return node_dict
-
 def main():
     parser = argparse.ArgumentParser(description="Generate a phylogenetic tree from NCBI taxids (TSV input).")
     parser.add_argument("input_file", help="Input TSV file containing taxids and counts/ratios")
@@ -725,6 +821,8 @@ def main():
     parser.add_argument("--taxdump", help="Path to taxdump.tar.gz file", required=True)
     parser.add_argument("--layout", choices=["circular", "linear"], default="circular", help="Tree layout (default: circular)")
     parser.add_argument("--info", choices=["count", "ratio"], default="count", help="Type of information in the input file (default: count)")
+    parser.add_argument("--font", choices=["absolutely", "relatively"], default="absolutely", help="Font scaling method (default: absolutely)")
+    parser.add_argument("--level", choices=["continuous", "discontinuous"], default="discontinuous", help="Color and font scaling method (default: discontinuous)")
     args = parser.parse_args()
 
     print("Processing taxdump file...")
@@ -748,7 +846,7 @@ def main():
         print(f"{args.layout.capitalize()} tree created successfully.")
 
         print("Generating HTML output...")
-        create_html_output(tree, args.output_file, args.layout)
+        create_html_output(tree, args.output_file, args.layout, args.info, args.font, args.level)
 
         print(f"{args.layout.capitalize()} tree has been saved as '{args.output_file}'")
         print(f"You can open this file in a web browser to view the tree.")
