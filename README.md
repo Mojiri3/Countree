@@ -15,7 +15,7 @@ taxid의 출현 빈도에 따라 tree를 가시적으로 보여줌. html로 하�
 - ```--taxdump```로 경로 넣으면(안 넣으면 다운 받아서 씀) local db 기반으로 쓸 수 있음
 - ```--layout```을 통해 circular, linear을 설정 가능(default: circular인데 솔직히 linear가 보기 더 좋음 키키)
 - ```--info```를 통해 input의 2번째 field에 넣은게 count인지 ratio인지 정할 수 있음 (default: ratio)
-- ```--font```를 통해 font 서식 차이를 전체 범위(전체 비중의 0~1 사이 값) 내에서 다룰 것인지, 아니면 최소~최대 범위에서 다룰 것인지 고름 (default: absolutely)
+- ```--font```를 통해 font 서식 차이를 전체 범위(전체 비중의 0\~1 사이 값) 내에서 다룰 것인지, 아니면 최소\~최대 범위에서 다룰 것인지 고름 (default: absolutely)
 - ```--level```을 통해 font 서식의 연속성과 불연속성을 정함 (default: discontinuous)
 
 # Input file 어케 만듦
