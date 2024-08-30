@@ -31,9 +31,9 @@ taxid의 출현 빈도에 따라 tree를 가시적으로 보여줌. html로 하�
 1. 솔직히 png, svg, pdf는 비추천함. html에 신경 더 써썼으니 그걸로 하셈. 용량도 별로 안 큼.
 2. taxid에 해당하는 대상이 얼마나 차지하는지 tree에서 가시적으로 볼 수 있음.
 3. output format 이 html일 경우
-  -tree에서 node 정보를 즉각적으로 볼 수 있고, data를 저장할 수 있음.
-  -저장한 data를 다운로드 받아 tsv 파일로 받을 수 있음.
-  -tsv 파일을 수정한 뒤, upload해서 데이터를 유동적으로 관리 가능함.
+  - tree에서 node 정보를 즉각적으로 볼 수 있고, data를 저장할 수 있음.
+  - 저장한 data를 다운로드 받아 tsv 파일로 받을 수 있음.
+  - tsv 파일을 수정한 뒤, upload해서 데이터를 유동적으로 관리 가능함.
 
 # 한계
 1. html로 저장하는 파일이 html 경로에 저장되지 않음. Linux에서 만든 거 ssh 통해서 Windows 환경에서 여는데 계속 download 경로로 받아지더라. 이건 좀 귀찮을 듯.
