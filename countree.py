@@ -377,6 +377,41 @@ def create_html_output(tree, output_file, layout, info_type, font, level):
                     width: 100%;
                     height: 40px;
                 }}
+                #node-info-settings {{
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background-color: white;
+                    padding: 10px;
+                    border: 1px solid black;
+                    z-index: 1000;
+                }}
+                .node-info-header {{
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 10px;
+                }}
+                .toggle-button {{
+                    background: none;
+                    border: none;
+                    font-size: 20px;
+                    cursor: pointer;
+                }}
+                .node-info-item {{
+                    margin-bottom: 5px;
+                }}
+                #node-layout-input {{
+                    width: 100%;
+                    margin-top: 10px;
+                }}
+                #font-size-slider {{
+                    width: 100%;
+                    margin-top: 10px;
+                }}
+                #max-font-size-display {{
+                    margin-top: 5px;
+                }}
             </style>
         </head>
         <body>
@@ -395,6 +430,22 @@ def create_html_output(tree, output_file, layout, info_type, font, level):
             <div id="legend-container"></div>
             <div id="custom-alert"></div>
             <div id="stored-data-display"></div>
+            <div id="node-info-settings">
+                <div class="node-info-header">
+                    <h3 style="margin: 0;">Node Display Settings</h3>
+                    <button id="toggle-widget" class="toggle-button">−</button>
+                </div>
+                <div id="widget-content">
+                    <div id="node-info-checkboxes"></div>
+                    <input type="text" id="node-layout-input" placeholder="Enter node layout">
+                    <button onclick="updateNodeDisplay()">Update Display</button>
+                    <div>
+                        <label for="font-size-slider">Max Font Size:</label>
+                        <input type="range" id="font-size-slider" min="10" max="80" value="20">
+                        <span id="max-font-size-display">20</span>
+                    </div>
+                </div>
+            </div>
             <script>
             const treeData = {json.dumps(tree_data)};
             const layout = "{layout}";
@@ -432,74 +483,65 @@ def create_html_output(tree, output_file, layout, info_type, font, level):
                 g.attr("transform", `translate(${{margin.left}},${{margin.top}})`);
             }}
 
-            // const colorScale = cumulative_value => {{
-            //     if (cumulative_value >= 0.5) return "#FF0000";  // Red
-            //     if (cumulative_value >= 0.25) return "#FF7F00";   // Orange
-            //     if (cumulative_value >= 0.125) return "#FFFF00";   // Yellow
-            //     if (cumulative_value >= 0.0625) return "#00FF00";   // Green
-            //     if (cumulative_value >= 0.03125) return "#0000FF";    // Blue
-            //     if (cumulative_value >= 0.015625) return "#4B0082";    // Indigo
-            //     return "#8F00FF";                     // Violet
-            // }};
-
-            // const fontSize = 30;
-            
-            // const fontSizeScale = cumulative_value => {{
-            //     if (cumulative_value >= 0.5) return fontSize;
-            //     if (cumulative_value >= 0.25) return fontSize * 0.9;
-            //     if (cumulative_value >= 0.125) return fontSize * 0.8;
-            //     if (cumulative_value >= 0.0625) return fontSize * 0.7;
-            //     if (cumulative_value >= 0.03125) return fontSize * 0.6;
-            //     if (cumulative_value >= 0.015625) return fontSize * 0.5;
-            //     return fontSize * 0.4;
-            // }};
-
             const cumulative_values = root.descendants().map(d => d.data.cumulative_value);
             const minValue = d3.min(cumulative_values);
             const maxValue = d3.max(cumulative_values);
 
             let colorScale, fontSizeScale;
 
-            if (level === "continuous") {{
-                if (font === "absolutely") {{
-                    colorScale = d3.scaleSequential(d3.interpolateRainbow)
-                        .domain([1, 0]);
-
-                    fontSizeScale = d3.scaleLog()
-                        .domain([0.00001, 1])
-                        .range([5, 20])
-                        .clamp(true);
-                }} else {{ // relatively
-                    colorScale = d3.scaleSequential(d3.interpolateRainbow)
-                        .domain([maxValue, minValue]);
-
-                    fontSizeScale = d3.scaleLog()
-                        .domain([Math.max(0.00001, minValue), maxValue])
-                        .range([5, 20])
-                        .clamp(true);
+            function updateScales(maxFontSize) {{
+                const minFontSize = 5;  // 최소 폰트 크기
+                const fontSizes = [];
+                const step = (maxFontSize - minFontSize) / 8;
+                
+                for (let i = 1; i < 8; i++) {{  // 가장 작은 값을 무시하고 7개의 값만 사용
+                    fontSizes.push(minFontSize + step * i);
                 }}
-            }} else {{ // discontinuous
-                const colors = ["#FF0000", "#FFA500", "#FFFF00", "#00FF00", "#0000FF", "#800080", "#000000"];
-                if (font === "absolutely") {{
-                    colorScale = d3.scaleThreshold()
-                        .domain([0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1])
-                        .range(["#8F00FF", "#4B0082", "#0000FF", "#00FF00", "#FFFF00", "#FF7F00", "#FF0000"]);
 
-                    fontSizeScale = d3.scaleThreshold()
-                        .domain([0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1])
-                        .range([5, 7, 9, 11, 13, 15, 17, 20]);
-                }} else {{ // relatively
-                    const step = (maxValue - minValue) / 7;
-                    colorScale = d3.scaleThreshold()
-                        .domain([minValue + step, minValue + 2*step, minValue + 3*step, minValue + 4*step, minValue + 5*step, minValue + 6*step])
-                        .range(["#8F00FF", "#4B0082", "#0000FF", "#00FF00", "#FFFF00", "#FF7F00", "#FF0000"]);
+                if (level === "continuous") {{
+                    if (font === "absolutely") {{
+                        colorScale = d3.scaleSequential(d3.interpolateRainbow)
+                            .domain([1, 0]);
 
-                    fontSizeScale = d3.scaleLinear()
-                        .domain([minValue, maxValue])
-                        .range([5, 20])
-                        .clamp(true);
+                        fontSizeScale = d3.scaleQuantile()
+                            .domain([0.00001, 1])
+                            .range(fontSizes);
+                    }} else {{ // relatively
+                        colorScale = d3.scaleSequential(d3.interpolateRainbow)
+                            .domain([maxValue, minValue]);
+
+                        fontSizeScale = d3.scaleQuantile()
+                            .domain([minValue, maxValue])
+                            .range(fontSizes);
+                    }}
+                }} else {{ // discontinuous
+                    const colors = ["#8F00FF", "#4B0082", "#0000FF", "#00FF00", "#FFFF00", "#FF7F00", "#FF0000"];
+                    if (font === "absolutely") {{
+                        const thresholds = [0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1]; //Arabidopsis의 chloroplast/all protein 비율이 0.0125정도임
+                        colorScale = d3.scaleThreshold()
+                            .domain(thresholds)
+                            .range(colors);
+
+                        fontSizeScale = d3.scaleThreshold()
+                            .domain(thresholds)
+                            .range(fontSizes);
+                    }} else {{ // relatively
+                        const step = (maxValue - minValue) / (colors.length - 1);
+                        const thresholds = d3.range(colors.length - 1).map(i => minValue + step * (i + 1));
+                        
+                        colorScale = d3.scaleThreshold()
+                            .domain(thresholds)
+                            .range(colors);
+
+                        fontSizeScale = d3.scaleQuantile()
+                            .domain([minValue, maxValue])
+                            .range(fontSizes);
+                    }}
                 }}
             }}
+
+            // Initialize scales with default max font size
+            updateScales(20);
 
             function getColor(cumulative_value) {{
                 return colorScale(cumulative_value);
@@ -520,6 +562,100 @@ def create_html_output(tree, output_file, layout, info_type, font, level):
                 .attr("d", layout === "circular" 
                     ? d3.linkRadial().angle(d => d.x).radius(d => d.y)
                     : d3.linkHorizontal().x(d => d.y).y(d => d.x));
+
+
+            const toggleButton = document.getElementById('toggle-widget');
+            const widgetContent = document.getElementById('widget-content');
+            let isWidgetOpen = true;
+
+            toggleButton.addEventListener('click', () => {{
+                isWidgetOpen = !isWidgetOpen;
+                widgetContent.style.display = isWidgetOpen ? 'block' : 'none';
+                toggleButton.textContent = isWidgetOpen ? '−' : '+';
+            }});
+                
+            let nodeInfoDisplay = {{
+                'sci_name': true,
+                'rank': true,
+                'taxid': false,
+                'count': false,
+                'value': false,
+                'cumulative_count': false,
+                'cumulative_value': false
+            }};
+
+            let nodeLayout = "$(sci_name) ($(rank))";
+
+            function createNodeInfoSettings() {{
+                const container = document.getElementById('node-info-checkboxes');
+                for (const [key, value] of Object.entries(nodeInfoDisplay)) {{
+                    const div = document.createElement('div');
+                    div.className = 'node-info-item';
+                    const checkbox = document.createElement('input');
+                    checkbox.type = 'checkbox';
+                    checkbox.id = key;
+                    checkbox.checked = value;
+                    checkbox.onchange = updateCheckboxState;
+                    const label = document.createElement('label');
+                    label.htmlFor = key;
+                    label.textContent = key;
+                    div.appendChild(checkbox);
+                    div.appendChild(label);
+                    container.appendChild(div);
+                }}
+                document.getElementById('node-layout-input').value = nodeLayout;
+            }}
+
+            function updateCheckboxState(event) {{
+                const key = event.target.id;
+                nodeInfoDisplay[key] = event.target.checked;
+                updateNodeLayout();
+            }}
+
+            function updateNodeLayout() {{
+                let newLayout = "";
+                for (const [key, value] of Object.entries(nodeInfoDisplay)) {{
+                    if (value) {{
+                        newLayout += `$(${{key}}) `;
+                    }}
+                }}
+                nodeLayout = newLayout.trim();
+                document.getElementById('node-layout-input').value = nodeLayout;
+                updateNodeDisplay();
+            }}
+
+            function updateNodeDisplay() {{
+                nodeLayout = document.getElementById('node-layout-input').value;
+                updateNodeText();
+            }}
+
+            function updateNodeText() {{
+                node.selectAll('text')
+                    .text(d => getNodeLabel(d.data))
+                    .attr("fill", d => getColor(d.data.cumulative_value))
+                    .style("font-size", d => `${{getFontSize(d.data.cumulative_value)}}px`);
+            }}
+
+            function getNodeLabel(data) {{
+                let label = nodeLayout;
+                const placeholders = {{
+                    '$(sci_name)': data.sci_name,
+                    '$(rank)': data.rank,
+                    '$(taxid)': data.name.split('(ID:')[1].split(',')[0].trim(),
+                    '$(count)': data.count,
+                    '$(value)': data.value.toFixed(4),
+                    '$(cumulative_count)': data.cumulative_count,
+                    '$(cumulative_value)': data.cumulative_value.toFixed(4)
+                }};
+
+                for (const [placeholder, value] of Object.entries(placeholders)) {{
+                    label = label.replace(placeholder, value);
+                }}
+
+                return label.trim();
+            }}
+
+            createNodeInfoSettings();
 
             const node = g.append("g")
                 .attr("stroke-linejoin", "round")
@@ -544,7 +680,7 @@ def create_html_output(tree, output_file, layout, info_type, font, level):
                     ? (d.x < Math.PI === !d.children ? "start" : "end")
                     : (d.children ? "end" : "start"))
                 .attr("transform", d => layout === "circular" && d.x >= Math.PI ? "rotate(180)" : null)
-                .text(d => info_type === 'count' ? d.data.rank : d.data.sci_name)
+                .text(d => getNodeLabel(d.data))
                 .attr("fill", d => getColor(d.data.cumulative_value))
                 .style("font-size", d => `${{getFontSize(d.data.cumulative_value)}}px`)
                 .clone(true).lower()
@@ -605,48 +741,49 @@ def create_html_output(tree, output_file, layout, info_type, font, level):
             }}
 
             function startHideTimer() {{
-            isMouseOverNode = false;
-            if (!isMouseOverTooltipOrMenu){{
+                isMouseOverNode = false;
+                if (!isMouseOverTooltipOrMenu) {{
                     clearTimeout(hideTimer);
                     hideTimer = setTimeout(() => hideTooltipAndMenu(), 500);
                 }}
             }}
 
             function hideTooltipAndMenu(callback) {{
-                if (!activeNode || (!isMouseOverNode && !isMouseOverTooltipOrMenu))
-                tooltip.transition().duration(200).style("opacity", 0);
-                contextMenu.transition().duration(200).style("opacity", 0);
-                setTimeout(() => {{
-                    contextMenu.style("display", "none");
-                    activeNode = null;
-                    if (callback) callback();
-                }}, 200);
+                if (!activeNode || (!isMouseOverNode && !isMouseOverTooltipOrMenu)) {{
+                    tooltip.transition().duration(200).style("opacity", 0);
+                    contextMenu.transition().duration(200).style("opacity", 0);
+                    setTimeout(() => {{
+                        contextMenu.style("display", "none");
+                        activeNode = null;
+                        if (callback) callback();
+                    }}, 200);
+                }}
             }}
 
             node.on("mouseover", (event, d) => showTooltipAndMenu(event, d))
                 .on("mouseout", startHideTimer);
 
             tooltip.on("mouseover", () => {{
-                clearTimeout(hideTimer)
+                clearTimeout(hideTimer);
                 isMouseOverTooltipOrMenu = true;
             }})
-                .on("mouseout", () => {{
-                    isMouseOverTooltipOrMenu = false;
-                    if (!isMouseOverNode) {{
-                        startHideTimer();
-                    }}
-            }})
+            .on("mouseout", () => {{
+                isMouseOverTooltipOrMenu = false;
+                if (!isMouseOverNode) {{
+                    startHideTimer();
+                }}
+            }});
 
             contextMenu.on("mouseover", () => {{
-                clearTimeout(hideTimer)
+                clearTimeout(hideTimer);
                 isMouseOverTooltipOrMenu = true;
             }})
-                .on("mouseout", () => {{
-                    isMouseOverTooltipOrMenu = false;
-                    if (!isMouseOverNode) {{
-                        startHideTimer();
-                    }}
-            }})
+            .on("mouseout", () => {{
+                isMouseOverTooltipOrMenu = false;
+                if (!isMouseOverNode) {{
+                    startHideTimer();
+                }}
+            }});
 
             function showCustomAlert(message, x, y, isWarning = false) {{
                 const alert = document.getElementById('custom-alert');
@@ -774,6 +911,17 @@ def create_html_output(tree, output_file, layout, info_type, font, level):
                 }});
 
             svg.call(zoom);
+
+            // Font size slider
+            const fontSizeSlider = document.getElementById('font-size-slider');
+            const maxFontSizeDisplay = document.getElementById('max-font-size-display');
+
+            fontSizeSlider.addEventListener('input', function() {{
+                const maxFontSize = parseInt(this.value);
+                maxFontSizeDisplay.textContent = maxFontSize;
+                updateScales(maxFontSize);
+                updateNodeText();
+            }});
 
             </script>
         </body>
