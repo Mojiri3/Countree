@@ -34,6 +34,14 @@ taxid의 출현 빈도에 따라 tree를 가시적으로 보여줌. html로 하�
   - tree에서 node 정보를 즉각적으로 볼 수 있고, data를 저장할 수 있음.
   - 저장한 data를 다운로드 받아 tsv 파일로 받을 수 있음.
   - tsv 파일을 수정한 뒤, upload해서 데이터를 유동적으로 관리 가능함.
+## Tree 예시 보여줄게
+- ```--info ratio --layout linear --font absolutely --level discontinuous```
+<img src="https://github.com/user-attachments/assets/4fb9dbda-55fc-4158-882c-5b4880ccdc61" height="400"/>
+
+- ```--info ratio --layout linear --font relatively --level discontinuous```
+<img src="https://github.com/user-attachments/assets/0b86dc4c-a8e6-457a-ae12-ad57e7c48842" height="400"/>
+
+난 ```linear```랑 ```discontinuous``` 를 쓰는 게 예뻐서 ```--font```만 다르게 해서 보여줬음. 딴 건 직접 해봐.
 
 # 한계
 1. html로 저장하는 파일이 html 경로에 저장되지 않음. Linux에서 만든 거 ssh 통해서 Windows 환경에서 여는데 계속 download 경로로 받아지더라. 이건 좀 귀찮을 듯.
