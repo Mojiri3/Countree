@@ -39,10 +39,10 @@ taxid의 출현 빈도에 따라 tree를 가시적으로 보여줌. html로 하�
 4. 생성된 html에 node에 표시되는 text를 바꾸는 기능과 font 크기 조절 기능이 있음. 적용하고 안 된 거 같다 싶으면 확대/축소 ㄱ
 ## Tree 예시 보여줄게
 - ```--info ratio --layout linear --font absolutely --level discontinuous```
-<img src="https://github.com/user-attachments/assets/4fb9dbda-55fc-4158-882c-5b4880ccdc61" height="400"/>
+<img src="https://github.com/user-attachments/assets/27876732-79ac-44a8-9835-23272d7af7b8" height="400"/>
 
 - ```--info ratio --layout linear --font relatively --level discontinuous```
-<img src="https://github.com/user-attachments/assets/0b86dc4c-a8e6-457a-ae12-ad57e7c48842" height="400"/>
+<img src="https://github.com/user-attachments/assets/1f3dbffc-45e9-404c-9bd6-5b8d4e6f8f6c" height="400"/>
 
 난 ```linear```랑 ```discontinuous``` 를 쓰는 게 예뻐서 ```--font```만 다르게 해서 보여줬음. 딴 건 직접 해봐.
 
